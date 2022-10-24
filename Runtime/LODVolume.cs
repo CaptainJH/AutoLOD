@@ -97,10 +97,13 @@ public class LODVolume : MonoBehaviour
     }
 
     public bool dirty;
+    public bool showVolumeHierarchy = false;
     public Bounds bounds;
     public GameObject hlodRoot;
     public List<Renderer> renderers = new List<Renderer>();
     public List<LODVolume> childVolumes = new List<LODVolume>();
+
+    private bool holdForEditorUpdate = false;
 
     public List<object> cached
     {
@@ -305,6 +308,29 @@ public class LODVolume : MonoBehaviour
         }
     }
 
+    [ContextMenu("Split Through")]
+    void SplitThroughContext()
+    {
+        MonoBehaviourHelper.StartCoroutine(SplitThrough());
+    }
+
+    IEnumerator SplitThrough()
+    {
+        if (renderers.Count > 1)
+        {
+            holdForEditorUpdate = true;
+            yield return Split();
+            List<LODVolume> childrenVols = new List<LODVolume>();
+            foreach (var vol in childVolumes)
+                childrenVols.Add(vol);
+            foreach (var vol in childrenVols)
+            {
+                yield return vol.SplitThrough();
+            }
+            holdForEditorUpdate = false;
+        }
+    }
+
     [ContextMenu("Split")]
     void SplitContext()
     {
@@ -499,7 +525,22 @@ public class LODVolume : MonoBehaviour
     void OnDrawGizmosSelected()
     {
         if (Selection.activeGameObject == gameObject)
+        {
             DrawGizmos(1f, Color.magenta);
+
+            if (showVolumeHierarchy && transform.parent)
+            {
+                var parentVolume = transform.parent.GetComponent<LODVolume>();
+                while (parentVolume)
+                {
+                    var depth = GetDepth(parentVolume.transform);
+                    parentVolume.DrawGizmos(1f, GetDepthColor(depth));
+                    if (parentVolume.transform.parent == null)
+                        break;
+                    parentVolume = parentVolume.transform.parent.GetComponent<LODVolume>();
+                }
+            }
+        }
     }
 #endif
 
@@ -519,6 +560,8 @@ public class LODVolume : MonoBehaviour
 
     public IEnumerator UpdateHLODs()
     {
+        yield return new WaitUntil(() => !holdForEditorUpdate);
+
         // Process children first, since we are now combining children HLODs to make parent HLODs
         foreach (Transform child in transform)
         {
